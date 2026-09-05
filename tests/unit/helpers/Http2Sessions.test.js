@@ -172,6 +172,48 @@ describe('helpers::Http2Sessions', () => {
     expect(session.close).toHaveBeenCalledTimes(1);
   });
 
+  it('bounds the pool for a single authority', () => {
+    for (let i = 0; i < 20; i++) {
+      pool.getSession('https://example.test', { sessionTimeout: 1000 + i });
+    }
+
+    expect(connectSpy).toHaveBeenCalledTimes(20);
+    expect(pool.sessions['https://example.test']).toHaveLength(8);
+  });
+
+  it('keeps the newest sessions when the pool is over the cap', () => {
+    const created = [];
+
+    for (let i = 0; i < 10; i++) {
+      created.push(pool.getSession('https://example.test', { sessionTimeout: 1000 + i }));
+    }
+
+    const pooled = pool.sessions['https://example.test'].map(([session]) => session);
+
+    expect(pooled).toEqual(created.slice(-8));
+    expect(pooled).not.toContain(created[0]);
+  });
+
+  it('honours a custom cap', () => {
+    const small = new Http2Sessions(2);
+
+    for (let i = 0; i < 5; i++) {
+      small.getSession('https://example.test', { sessionTimeout: 1000 + i });
+    }
+
+    expect(small.sessions['https://example.test']).toHaveLength(2);
+  });
+
+  it('applies the cap per authority, not across the pool', () => {
+    for (let i = 0; i < 10; i++) {
+      pool.getSession('https://example.test', { sessionTimeout: 1000 + i });
+      pool.getSession('https://other.test', { sessionTimeout: 1000 + i });
+    }
+
+    expect(pool.sessions['https://example.test']).toHaveLength(8);
+    expect(pool.sessions['https://other.test']).toHaveLength(8);
+  });
+
   it('installs a request wrapper when sessionTimeout is set', () => {
     const session = pool.getSession('https://example.test', { sessionTimeout: 1000 });
 
